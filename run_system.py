@@ -32,6 +32,7 @@ import time
 import datetime
 import os, sys
 from os.path import isfile
+import psutil
 
 import open3d as o3d
 
@@ -42,6 +43,35 @@ from open3d_example import check_folder_structure
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from initialize_config import initialize_config
+
+
+def get_memory_usage():
+    """
+    获取当前 Python 进程的内存占用情况
+    """
+    process = psutil.Process(os.getpid())
+    # 常驻内存占用 (Resident Set Size)
+    rss = process.memory_info().rss  # 以字节为单位
+    # 虚拟内存占用 (Virtual Memory Size)
+    vms = process.memory_info().vms  # 以字节为单位
+    return rss, vms
+
+def calculate_memory_difference(start_memory, end_memory):
+    """
+    计算内存使用变化
+    """
+    rss_diff = abs(end_memory[0] - start_memory[0])
+    vms_diff = abs(end_memory[1] - start_memory[1])
+    return rss_diff, vms_diff
+
+def sum_memory_usages(memory_usages):
+    """
+    计算所有步骤使用的内存
+    """
+    total_rss = sum(usage[0] for usage in memory_usages)
+    total_vms = sum(usage[1] for usage in memory_usages)
+    return total_rss, total_vms
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Reconstruction system")
@@ -112,36 +142,62 @@ if __name__ == "__main__":
         print("%40s : %s" % (key, str(val)))
 
     times = [0, 0, 0, 0, 0, 0]
+    memory_usages = [(0, 0)] * 6
+
+    
     if args.make:
         start_time = time.time()
+        start_memory = get_memory_usage()
         import make_fragments
         make_fragments.run(config)
         times[0] = time.time() - start_time
+        end_memory = get_memory_usage()
+        memory_usages[0] = calculate_memory_difference(start_memory, end_memory)
+
     if args.register:
         start_time = time.time()
+        start_memory = get_memory_usage()
         import register_fragments
         register_fragments.run(config)
         times[1] = time.time() - start_time
+        end_memory = get_memory_usage()
+        memory_usages[1] = calculate_memory_difference(start_memory, end_memory)
+
     if args.refine:
         start_time = time.time()
+        start_memory = get_memory_usage()
         import refine_registration
         refine_registration.run(config)
         times[2] = time.time() - start_time
+        end_memory = get_memory_usage()
+        memory_usages[2] = calculate_memory_difference(start_memory, end_memory)
+
     if args.integrate:
         start_time = time.time()
+        start_memory = get_memory_usage()
         import integrate_scene
         integrate_scene.run(config)
         times[3] = time.time() - start_time
+        end_memory = get_memory_usage()
+        memory_usages[3] = calculate_memory_difference(start_memory, end_memory)
+
     if args.slac:
         start_time = time.time()
+        start_memory = get_memory_usage()
         import slac
         slac.run(config)
         times[4] = time.time() - start_time
+        end_memory = get_memory_usage()
+        memory_usages[4] = calculate_memory_difference(start_memory, end_memory)
+
     if args.slac_integrate:
         start_time = time.time()
+        start_memory = get_memory_usage()
         import slac_integrate
         slac_integrate.run(config)
         times[5] = time.time() - start_time
+        end_memory = get_memory_usage()
+        memory_usages[5] = calculate_memory_difference(start_memory, end_memory)
 
     print("====================================")
     print("Elapsed time (in h:m:s)")
@@ -153,4 +209,27 @@ if __name__ == "__main__":
     print("- SLAC                %s" % datetime.timedelta(seconds=times[4]))
     print("- SLAC Integrate      %s" % datetime.timedelta(seconds=times[5]))
     print("- Total               %s" % datetime.timedelta(seconds=sum(times)))
+
+    # 打印内存占用信息
+    total_rss, total_vms = sum_memory_usages(memory_usages)
+
+    print("================================================================")
+    print("Memory Usage (in bytes and MB)")
+    print("================================================================")
+    print("- Make:       RSS: %d (%0.2f MB), VMS: %d (%0.2f MB)" 
+    % (memory_usages[0][0], memory_usages[0][0] / 1024**2, 
+       memory_usages[0][1], memory_usages[0][1] / 1024**2))
+    print("- Register:   RSS: %d (%0.2f MB), VMS: %d (%0.2f MB)" 
+    % (memory_usages[1][0], memory_usages[1][0] / 1024**2, 
+       memory_usages[1][1], memory_usages[1][1] / 1024**2))
+    print("- Refine:     RSS: %d (%0.2f MB), VMS: %d (%0.2f MB)" 
+    % (memory_usages[2][0], memory_usages[2][0] / 1024**2, 
+       memory_usages[2][1], memory_usages[2][1] / 1024**2))
+    print("- Integrate:  RSS: %d (%0.2f MB), VMS: %d (%0.2f MB)" 
+    % (memory_usages[3][0], memory_usages[3][0] / 1024**2, 
+       memory_usages[3][1], memory_usages[3][1] / 1024**2))
+    print("- Total       RSS: %d (%0.2f MB), VMS: %d (%0.2f MB)" 
+    % (total_rss, total_rss / 1024**2, 
+       total_vms, total_vms / 1024**2))
+
     sys.stdout.flush()
